@@ -47,21 +47,14 @@ func requestAccessToCS() {
     }
     state = WANTED
 	for i := range repliesReceived {
-		if i != myID && i != 0 {
-			repliesReceived[i] = false
-		}
+		if i != myID && i != 0 { repliesReceived[i] = false }
 	}
-	msg := Message{
-		ID:    myID,
-		Clock: logicalClock,
-		Type:  "request",
-	}
+	msg := Message{ ID: myID, Clock: logicalClock, Type: "request"}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
 		fmt.Println("Error marshalling JSON:", err)
 		return
 	}
-	// Converte o JSON para um slice de bytes para enviar
 	buf := []byte(msgJSON)
 	for i, conn := range CliConn {
 		if conn != nil {
@@ -77,8 +70,7 @@ func requestAccessToCS() {
 	}
 	for {
 		allReceived := true
-		for index, received := range repliesReceived {
-			fmt.Println("index:", index, "received = ", received)
+		for _, received := range repliesReceived {
 			if !received {
 				allReceived = false
 				break
@@ -87,9 +79,9 @@ func requestAccessToCS() {
 		if allReceived {
 			break
 		}
-		time.Sleep(time.Millisecond * 10) // Ajuste o tempo de espera conforme necessário
+		time.Sleep(time.Millisecond * 100)
 	}
-	state = HELD // quando obtém acesso
+	state = HELD
 	fmt.Println("state: %s", state)
 	sharedResourceAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:10001")
 	if err != nil {
@@ -191,19 +183,21 @@ func doServerJob() {
 			PrintError(err)
 			continue
 		}
-		// Desserializa a mensagem JSON recebida para uma estrutura Message
 		var receivedMsg Message
 		err = json.Unmarshal(buf[:n], &receivedMsg)
 		if err != nil {
 			fmt.Println("Error unmarshalling JSON:", err)
 			continue
 		}
-		// Imprime as informações recebidas
 		fmt.Printf("Received message from %s: ID=%d, Clock=%d, Type=%s\n", addr, receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type)
+
 		if receivedMsg.Type == "request" {
+			fmt.Println("after if request")
 			if state == HELD || (state == WANTED && (logicalClock < receivedMsg.Clock || (logicalClock == receivedMsg.Clock && myID < receivedMsg.ID))) {
+				fmt.Println("after if  state == HELD")
 				requestQueue.PushBack(receivedMsg)
 			} else {
+				fmt.Println("after else")
 				var conn = CliConn[receivedMsg.ID]
 				msg := Message{
 					ID:    myID,
@@ -217,16 +211,22 @@ func doServerJob() {
 				}
 				buf := []byte(msgJSON)
 				if conn != nil {
+					fmt.Println("after if conn != nil")
+					printConnections()
+					fmt.Printf("CONN ESPECIFICA = CliConn[%d] - Local: %s, Remote: %s\n", receivedMsg.ID, conn.LocalAddr(), conn.RemoteAddr())
 					_, err := conn.Write(buf)
 					if err != nil {
-						fmt.Println("Error marshalling JSON:", err)
+						fmt.Println("Error writing to connection:", err)
 						return
 					}
 				}
 			}
+		} else if receivedMsg.Type == "reply" {
+			repliesReceived[receivedMsg.ID] = true
 		}
 	}
 }
+
 
 
 func doClientJob(targetID int, clock int) {
