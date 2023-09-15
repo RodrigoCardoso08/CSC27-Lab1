@@ -47,37 +47,40 @@ func doServerJob() {
 	}
 }
 
-func doClientJob(otherProcess int, clock int) {
-	msg := strconv.Itoa(clock)
-	buf := []byte(msg)
-	_, err := CliConn[otherProcess].Write(buf)
-	fmt.Printf("Sent Clock: %d to process %d\n", clock, otherProcess+1) // +1 para ajustar o índice para o ID
-	PrintError(err)
+func doClientJob(targetID int, clock int) {
+    msg := strconv.Itoa(clock)
+    buf := []byte(msg)
+    if conn, ok := CliConn[targetID]; ok {
+        _, err := conn.Write(buf)
+        fmt.Printf("Sent Clock: %d to process %d\n", clock, targetID)
+        PrintError(err)
+    } else {
+        fmt.Printf("No connection found for process ID %d\n", targetID)
+    }
 }
 
+
 func initConnections() {
-    myID, _ = strconv.Atoi(os.Args[1])  // convertendo o ID para inteiro
-    myPort = os.Args[myID + 1]  // o porto é agora indexado pelo ID
-    nServers = len(os.Args) - 3  // você tem len(os.Args) - 2 servidores, incluindo o próprio servidor
-    CliConn = make(map[int]*net.UDPConn)  // não precisamos pré-alocar o mapa
+    myID, _ = strconv.Atoi(os.Args[1])
+    myPort = os.Args[myID + 1]
+    nServers = len(os.Args) - 3
+    CliConn = make(map[int]*net.UDPConn)
     ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+myPort)
     CheckError(err)
     ServConn, err = net.ListenUDP("udp", ServerAddr)
     CheckError(err)
-    j := 0
-    for i := 2; i < len(os.Args); i++ {
-        if i != myID + 1 {  // não queremos conectar ao nosso próprio servidor
-            ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+os.Args[i])
+    for i := 0; i <= nServers; i++ {
+        // id, _ := strconv.Atoi(os.Args[i-1])
+        if i != myID - 1 {
+            ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+os.Args[i+2])
             CheckError(err)
-
             Conn, err := net.DialUDP("udp", nil, ServerAddr)
             CheckError(err)
-
-            CliConn[j] = Conn  // adicionamos a conexão ao nosso mapa
-            j++
+            CliConn[i+1] = Conn
         }
     }
 }
+
 
 func readInput(ch chan string) {
 	reader := bufio.NewReader(os.Stdin)
@@ -103,9 +106,9 @@ func main() {
 	initConnections()
 	//O fechamento de conexões deve ficar aqui, assim só fecha   //conexão quando a main morrer
 	defer ServConn.Close()
-	for i := 0; i < nServers; i++ {
-		defer CliConn[i].Close()
-	}
+	for _, conn := range CliConn {
+        defer conn.Close()
+    }
 	ch := make (chan string)
 	go readInput(ch)
 	logicalClock = 0
@@ -119,9 +122,11 @@ func main() {
 				if targetID == myID {
 					logicalClock++
 					fmt.Printf("Internal operation. New Logical Clock: %d\n", logicalClock)
-				} else if targetID > 0 && targetID <= nServers {
+				} else if _, ok := CliConn[targetID]; ok {
 					logicalClock++
-					go doClientJob(targetID-1, logicalClock) // -1 para ajustar o ID para o índice
+					go doClientJob(targetID, logicalClock)
+				} else {
+					fmt.Printf("Invalid target ID: %d\n", targetID)
 				}
 			} else {
 				fmt.Println("Closed channel !")
