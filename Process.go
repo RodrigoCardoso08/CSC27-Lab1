@@ -1,5 +1,4 @@
 package main
-
 import (
 	"fmt"
 	"net"
@@ -11,20 +10,19 @@ import (
 	"encoding/json"
 	"container/list"
 )
-
 var err string
-var myPort string          //porta do meu servidor
-var nServers int           //qtde de outros processo
-var CliConn map[int]*net.UDPConn // mapa com conexões para os servidores dos outros processos dos outros processos
-var ServConn *net.UDPConn //conexão do meu servidor (onde recebo mensagens dos outros processos)
+var myPort string
+var nServers int
+var CliConn map[int]*net.UDPConn
+var ServConn *net.UDPConn
 var logicalClock int
 var wantedClock int
-var myID int // Adicione um ID para o processo
+var myID int
 var clockMutex sync.Mutex
 const (
-	RELEASED = iota  // RELEASED será 0
-	WANTED           // WANTED será 1 (iota incrementado)
-	HELD             // HELD será 2 (iota incrementado novamente)
+	RELEASED = iota
+	WANTED
+	HELD
 )
 var state int
 type Message struct {
@@ -138,9 +136,8 @@ func requestAccessToCS() {
 				return
 			}
 		}
-		
 	}
-	requestQueue.Init() // Limpar a fila
+	requestQueue.Init()
 }
 
 func updateClock(receivedClock int) {
@@ -186,9 +183,6 @@ func doServerJob() {
 		fmt.Printf("Received message from: ID=%d, Clock=%d, Type=%s\n", receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type)
 		if receivedMsg.Type == "request" {
 			updateClock(receivedMsg.Clock)
-			fmt.Printf("------------------\n")
-			fmt.Printf("logicalClock=%d, receivedMsg.Clock=%d\n",logicalClock, receivedMsg.Clock)
-			fmt.Printf("------------------\n")
 			if state == HELD || (state == WANTED && (wantedClock < receivedMsg.Clock || (logicalClock == receivedMsg.Clock && myID < receivedMsg.ID))) {
 				requestQueue.PushBack(receivedMsg)
 			} else {
@@ -221,8 +215,6 @@ func doServerJob() {
 	}
 }
 
-
-
 func doClientJob(targetID int, clock int) {
     msg := strconv.Itoa(clock)
     buf := []byte(msg)
@@ -235,7 +227,6 @@ func doClientJob(targetID int, clock int) {
     }
 }
 
-
 func initConnections() {
     myID, _ = strconv.Atoi(os.Args[1])
     myPort = os.Args[myID + 1]
@@ -246,7 +237,6 @@ func initConnections() {
     ServConn, err = net.ListenUDP("udp", ServerAddr)
     CheckError(err)
     for i := 0; i <= nServers; i++ {
-        // id, _ := strconv.Atoi(os.Args[i-1])
         if i != myID - 1 {
             ServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1"+os.Args[i+2])
             CheckError(err)
@@ -256,7 +246,6 @@ func initConnections() {
         }
     }
 }
-
 
 func readInput(ch chan string) {
 	reader := bufio.NewReader(os.Stdin)
@@ -278,7 +267,6 @@ func printConnections(){
 
 func main() {
 	myID, _ = strconv.Atoi(os.Args[1])
-	fmt.Printf("myID: %d\n", myID)
 	initConnections()
 	state = RELEASED
 	requestQueue = list.New()
@@ -290,7 +278,6 @@ func main() {
 	go readInput(ch)
 	logicalClock = 0
 	repliesReceived = make([]bool, nServers+2)
-	fmt.Printf("repliesReceived: %d\n", len(repliesReceived))
 	repliesReceived[0] = true
 	repliesReceived[myID] = true
 	go doServerJob()
