@@ -44,6 +44,6 @@ func main() {
 			continue
 		}
 
-		fmt.Printf("Received message from %s: ID=%d, Clock=%d, Type=%s\n", addr, receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type)
+		fmt.Printf("Received message from %s: ID=%d\n Clock=%d\n Type=%s\n Message= %s\n", addr, receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type, receivedMsg.Text)
 	}
 }

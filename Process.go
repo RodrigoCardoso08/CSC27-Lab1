@@ -18,6 +18,7 @@ var nServers int           //qtde de outros processo
 var CliConn map[int]*net.UDPConn // mapa com conexões para os servidores dos outros processos dos outros processos
 var ServConn *net.UDPConn //conexão do meu servidor (onde recebo mensagens dos outros processos)
 var logicalClock int
+var wantedClock int
 var myID int // Adicione um ID para o processo
 var clockMutex sync.Mutex
 const (
@@ -29,6 +30,7 @@ var state int
 type Message struct {
 	ID    int `json:"id"`
 	Clock int `json:"clock"`
+	ReceivedClock int `json:"clock"`
 	Type  string `json:"type"`
 }
 var requestQueue *list.List
@@ -49,6 +51,7 @@ func requestAccessToCS() {
 	for i := range repliesReceived {
 		if i != myID && i != 0 { repliesReceived[i] = false }
 	}
+	updateClock(0)
 	msg := Message{ ID: myID, Clock: logicalClock, Type: "request"}
 	msgJSON, err := json.Marshal(msg)
 	if err != nil {
@@ -82,7 +85,7 @@ func requestAccessToCS() {
 		time.Sleep(time.Millisecond * 100)
 	}
 	state = HELD
-	fmt.Println("state: %s", state)
+	fmt.Println("Entrei na CS\n")
 	sharedResourceAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:10001")
 	if err != nil {
 		fmt.Println("Error resolving address:", err)
@@ -110,8 +113,8 @@ func requestAccessToCS() {
 		fmt.Println("Error sending message:", err)
 		return
 	}
-	fmt.Println("Message sent to SharedResource")
-	// state = RELEASED // quando libera a CS
+	time.Sleep(time.Second * 5)
+	fmt.Println("Sai da CS\n")
 	state = RELEASED
 	for e := requestQueue.Front(); e != nil; e = e.Next() {
 		request := e.Value.(Message)
@@ -119,6 +122,7 @@ func requestAccessToCS() {
 		msg := Message{
 			ID:    myID,
 			Clock: logicalClock,
+			ReceivedClock: request.ReceivedClock,
 			Type:  "reply",
 		}
 		msgJSON, err := json.Marshal(msg)
@@ -137,16 +141,6 @@ func requestAccessToCS() {
 		
 	}
 	requestQueue.Init() // Limpar a fila
-}
-
-func useCS() {
-    fmt.Println("Entrei na CS")
-    // Mandar a mensagem para o SharedResource
-    // ...
-    time.Sleep(time.Second * 2) // Dormir um pouco
-    fmt.Println("Sai da CS")
-    // Liberar a CS
-    // ...
 }
 
 func updateClock(receivedClock int) {
@@ -178,7 +172,7 @@ func PrintError(err error) {
 func doServerJob() {
 	buf := make([]byte, 1024)
 	for {
-		n, addr, err := ServConn.ReadFromUDP(buf)
+		n, _, err := ServConn.ReadFromUDP(buf)
 		if err != nil {
 			PrintError(err)
 			continue
@@ -189,19 +183,20 @@ func doServerJob() {
 			fmt.Println("Error unmarshalling JSON:", err)
 			continue
 		}
-		fmt.Printf("Received message from %s: ID=%d, Clock=%d, Type=%s\n", addr, receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type)
-
+		fmt.Printf("Received message from: ID=%d, Clock=%d, Type=%s\n", receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type)
 		if receivedMsg.Type == "request" {
-			fmt.Println("after if request")
-			if state == HELD || (state == WANTED && (logicalClock < receivedMsg.Clock || (logicalClock == receivedMsg.Clock && myID < receivedMsg.ID))) {
-				fmt.Println("after if  state == HELD")
+			updateClock(receivedMsg.Clock)
+			fmt.Printf("------------------\n")
+			fmt.Printf("logicalClock=%d, receivedMsg.Clock=%d\n",logicalClock, receivedMsg.Clock)
+			fmt.Printf("------------------\n")
+			if state == HELD || (state == WANTED && (wantedClock < receivedMsg.Clock || (logicalClock == receivedMsg.Clock && myID < receivedMsg.ID))) {
 				requestQueue.PushBack(receivedMsg)
 			} else {
-				fmt.Println("after else")
 				var conn = CliConn[receivedMsg.ID]
 				msg := Message{
 					ID:    myID,
 					Clock: logicalClock,
+					ReceivedClock: receivedMsg.ReceivedClock,
 					Type:  "reply",
 				}
 				msgJSON, err := json.Marshal(msg)
@@ -211,9 +206,6 @@ func doServerJob() {
 				}
 				buf := []byte(msgJSON)
 				if conn != nil {
-					fmt.Println("after if conn != nil")
-					printConnections()
-					fmt.Printf("CONN ESPECIFICA = CliConn[%d] - Local: %s, Remote: %s\n", receivedMsg.ID, conn.LocalAddr(), conn.RemoteAddr())
 					_, err := conn.Write(buf)
 					if err != nil {
 						fmt.Println("Error writing to connection:", err)
@@ -223,6 +215,8 @@ func doServerJob() {
 			}
 		} else if receivedMsg.Type == "reply" {
 			repliesReceived[receivedMsg.ID] = true
+			wantedClock = receivedMsg.ReceivedClock
+			updateClock(receivedMsg.Clock)
 		}
 	}
 }
