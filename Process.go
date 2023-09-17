@@ -183,7 +183,7 @@ func doServerJob() {
 		fmt.Printf("Received message from: ID=%d, Clock=%d, Type=%s\n", receivedMsg.ID, receivedMsg.Clock, receivedMsg.Type)
 		if receivedMsg.Type == "request" {
 			updateClock(receivedMsg.Clock)
-			if state == HELD || (state == WANTED && (wantedClock < receivedMsg.Clock || (logicalClock == receivedMsg.Clock && myID < receivedMsg.ID))) {
+			if state == HELD || (state == WANTED && (wantedClock < receivedMsg.Clock || (wantedClock == receivedMsg.Clock && myID < receivedMsg.ID))) {
 				requestQueue.PushBack(receivedMsg)
 			} else {
 				var conn = CliConn[receivedMsg.ID]
